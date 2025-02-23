@@ -2,22 +2,41 @@ package paint;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Stack;
 
 public class PaintApp extends JFrame {
     private DrawPanel drawPanel;
+    private PaintWithMouse paintWithMouse;
     private Stack<ShapeState> undoStack; // Stack lưu các bước vẽ cho Undo
     private Stack<ShapeState> redoStack; // Stack lưu các bước vẽ cho Redo
-    public PaintApp(){
+    private Stack<ShapeState> removed;
+    private Stack<ShapeState> shapes;
+    private Color currentColor;
+    //    private ImageIcon tools;
+    private String shapeType;
+    private int inkPanelWidth;
+    private int inkPanelHeight;
+    BufferedImage canvas;
+    Graphics2D graphics2D;
+    private int activeTool;
+    private BufferedImage image;
+    private int group;
+    private ArrayList<Shape> shape = new ArrayList<>(); //Lưu trữ các hình vẽ
+    private ArrayList<Shape> undoShapes = new ArrayList<>();// lưu các hình bị undo
+
+    public PaintApp() {
         setTitle("Paint");
         setSize(1200, 800);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setVisible(true);
         setLocationRelativeTo(null);
         setLayout(null);
 
         drawPanel = new DrawPanel();
-        drawPanel.setBounds(0, 80, 1200, 650);
         add(drawPanel);
 
         undoStack = new Stack<>();
@@ -25,9 +44,11 @@ public class PaintApp extends JFrame {
 
         createMenu(); // Tạo menu
         createToolPanel(); // Tạo các nút công cụ
+        setVisible(true);
     }
-    public void createMenu(){
-        JMenuBar menuBar= new JMenuBar(); // khởi tạo thanh menu
+
+    public void createMenu() {
+        JMenuBar menuBar = new JMenuBar(); // khởi tạo thanh menu
         JMenu file = new JMenu("File");
 
         JMenuItem newItem = new JMenuItem("New");
@@ -50,20 +71,20 @@ public class PaintApp extends JFrame {
 
     }
 
-    public void createToolPanel(){
-            JPanel toolPanel = new JPanel();
-            toolPanel.setLayout(null);
-            toolPanel.setBounds(0, 5, 1200, 60);
+    public void createToolPanel() {
+        JPanel toolPanel = new JPanel();
+        toolPanel.setLayout(null);
+        toolPanel.setBounds(0, 5, 1200, 60);
 
-            // Mảng các tên công cụ vẽ
-            String[] tools = {
-                    "Bút chì",
-                    "Hình chữ nhật",
-                    "Hình tròn",
-                    "Hình vuông",
-                    "Hình thoi",
-                    "Tam giác"
-            };
+        // Mảng các tên công cụ vẽ
+        String[] tools = {
+                "Bút chì",
+                "Hình chữ nhật",
+                "Hình tròn",
+                "Hình vuông",
+                "Hình thoi",
+                "Tam giác"
+        };
         String[] iconPaths = {
                 "src/icons/pen.png",
                 "src/icons/rectangle.png",
@@ -75,28 +96,29 @@ public class PaintApp extends JFrame {
         // Tạo JComboBox với các công cụ vẽ
         JComboBox<ImageIcon> toolBox = new JComboBox<>();
 
+
         for (String path : iconPaths) {
             ImageIcon icon = new ImageIcon(new ImageIcon(path).getImage().getScaledInstance(40, 40, Image.SCALE_SMOOTH));
             toolBox.addItem(icon);
         }
-        toolBox.setBounds(10,  5, 80, 50);
+        toolBox.setBounds(10, 5, 80, 50);
 
-            toolPanel.add(toolBox);
+        toolPanel.add(toolBox);
 
-            // Nút Undo
+        // Nút Undo
 
         ImageIcon undoIcon = new ImageIcon("src\\icons\\undo.png");
         ImageIcon scaledUndoIcon = new ImageIcon(undoIcon.getImage().getScaledInstance(30, 30, Image.SCALE_SMOOTH));
         JButton btnUndo = new JButton(scaledUndoIcon);
-            btnUndo.setBounds(105, 15, 50, 30);
-            btnUndo.addActionListener(e -> undo());
+        btnUndo.setBounds(105, 15, 50, 30);
+        btnUndo.addActionListener(e -> undo());
 
-            // Nút Redo
+        // Nút Redo
         ImageIcon redoIcon = new ImageIcon("src\\icons\\redo.png");
         ImageIcon scaledRedoIcon = new ImageIcon(redoIcon.getImage().getScaledInstance(30, 30, Image.SCALE_SMOOTH));
         JButton btnRedo = new JButton(scaledRedoIcon);
-            btnRedo.setBounds(165, 15, 50, 30);
-            btnRedo.addActionListener(e -> redo());
+        btnRedo.setBounds(165, 15, 50, 30);
+        btnRedo.addActionListener(e -> redo());
 
         // Nút Tẩy
         ImageIcon eraserIcon = new ImageIcon("src\\icons\\eraser.png");
@@ -118,6 +140,18 @@ public class PaintApp extends JFrame {
         JButton btnStrokeColor = new JButton();
         btnStrokeColor.setBounds(560, 15, 30, 30);
         btnStrokeColor.setBackground(Color.BLACK);
+        btnStrokeColor.addActionListener(e -> {
+            // Mở hộp thoại chọn màu
+            Color selectedColor = JColorChooser.showDialog(null, "Chọn màu vẽ", currentColor);
+            if (selectedColor != null) {
+                currentColor = selectedColor; // Cập nhật màu hiện tại
+                drawPanel.setColor(currentColor); // Gửi màu mới đến DrawPanel
+            }
+        });
+        toolPanel.add(btnStrokeColor);
+        add(toolPanel);
+        revalidate();
+        repaint();
 
         // Nút Chọn màu nền
         ImageIcon fillIcon = new ImageIcon("src\\icons\\paint-bucket.png");
@@ -125,20 +159,30 @@ public class PaintApp extends JFrame {
         JButton btnFillColor = new JButton(scaledFillIcon);
         btnFillColor.setBounds(600, 15, 50, 30);
 
-            toolPanel.add(btnUndo);
-            toolPanel.add(btnRedo);
-            toolPanel.add(strokeSizeText);
-            toolPanel.add(strokeSizeSlider);
-            toolPanel.add(strokeSizeLabel);
-            toolPanel.add(btnEraser);
-            toolPanel.add(btnFillColor);
-            toolPanel.add(btnStrokeColor);
+        btnFillColor.addActionListener(e -> {
+            Color selecteColor = JColorChooser.showDialog(null, "Choose a color", currentColor);
+            if (selecteColor != null) {
+                drawPanel.setBackground(selecteColor);
+                drawPanel.repaint();
+            }
+        });
 
-            add(toolPanel);
-            revalidate();
-            repaint();
-        }
-    // Hàm thực hiện Undo
+        toolPanel.add(btnUndo);
+        toolPanel.add(btnRedo);
+        toolPanel.add(strokeSizeText);
+        toolPanel.add(strokeSizeSlider);
+        toolPanel.add(strokeSizeLabel);
+        toolPanel.add(btnEraser);
+        toolPanel.add(btnFillColor);
+        toolPanel.add(btnStrokeColor);
+
+        add(toolPanel);
+        revalidate();
+        repaint();
+    }
+
+
+    //         Hàm thực hiện Undo
     private void undo() {
         if (!undoStack.isEmpty()) {
             ShapeState lastState = undoStack.pop(); // Lấy bước vẽ cuối cùng từ undoStack
@@ -162,4 +206,27 @@ public class PaintApp extends JFrame {
         }
     }
 
+    public void setTool(int tool) {
+        this.activeTool = tool;
+    }
+
+    public void clear() {
+        if (graphics2D == null) {
+            graphics2D = canvas.createGraphics();
+        }
+        graphics2D.setPaint(Color.WHITE);
+        graphics2D.fillRect(0, 0, getWidth(), getHeight());
+        shapes.clear();
+        removed.clear();
+        repaint();
+        graphics2D.setColor(currentColor);
+
+
+    }
+
+
+    public static void main(String[] args) {
+        new PaintApp();
+
+    }
 }
